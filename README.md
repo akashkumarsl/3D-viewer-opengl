@@ -11,12 +11,12 @@ To install the application, simply download the .exe file from the Debug folder 
 ## Usage
 Once the application is running, use the following controls to interact with the 3D model:
 
--Arrow keys: Rotate the model
--Mouse Scroll: Zoom in/out
--Hold CTRL key: Enable camera view according to the mouse pointer
--U: Uniform scale
--Shift + U: Revert uniform scale
--Use the UI to modify lighting effects
+*Arrow keys: Rotate the model
+*Mouse Scroll: Zoom in/out
+*Hold CTRL key: Enable camera view according to the mouse pointer
+*U: Uniform scale
+*Shift + U: Revert uniform scale
+*Use the UI to modify lighting effects
 
 It supports wireframe Debug View
 
