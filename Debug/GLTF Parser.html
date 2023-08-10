@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html>
+<canvas id="canvas" width="1000" height="700"></canvas>
+
+<body>
+
+  <script src="https://webglfundamentals.org/webgl/resources/m4.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix.js"></script>
+
+  <script src="main.js">
+
+  </script>
+
+  <script>
+
+    async function getJson(url) {
+      let response = await fetch(url);
+      let data = await response.json()
+      return data;
+    }
+
+    async function getBin(Path) {
+      let response = await fetch(Path);
+      let data = await response.arrayBuffer();
+      return data;
+    }
+    async function main() {
+      let apiUrl2 = "/Carbon Bike/scene.gltf"
+
+      let apiUrl = "/Rocket/scene.gltf"
+      let apiUrlq = "https://raw.githubusercontent.com/KhronosGroup/glTF-Asset-Generator/master/Output/Positive/Texture_Sampler/Texture_Sampler_13.gltf"
+      let apiUrl1 = "https://raw.githubusercontent.com/KhronosGroup/glTF-Asset-Generator/master/Output/Positive/Material_DoubleSided/Material_DoubleSided_01.gltf"
+      var PWD = apiUrl.substring(0, apiUrl.lastIndexOf('/'));
+      let UriMap = new Map()
+      var vertexShaderSource = `#version 300 es
+#ifdef POSITION
+layout(location = 0)in vec3 position;  
+#endif
+
+#ifdef NORMAL
+layout(location = 1)in vec3 normal;
+
+
+out vec3 V_Normal;
+#ifdef TANGENT
+layout(location = 3)in vec4 tangent;
+out mat3 v_TBN;
+#endif
+
+#endif
+
+out vec2 v_UV[2];
+
+#if defined TEXT_0 || defined TEXT_1
+
+
+#endif
+
+#ifdef TEXT_0
+layout(location = 2)in vec2 TextureCoord_0;
+#endif
+
+#ifdef TEXT_1
+layout(location = 5)in vec2 TextureCoord_1;
+#endif
+
+
+
+#ifdef COLOR
+layout(location = 4)in vec4 color;
+out vec4 Color;
+#endif
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+uniform mat4 matrix;
+uniform mat4 matrix1;
+
+
+
+out vec3 FragPos;
+
+
+
+
+void main() {
+  FragPos = vec3(model *matrix1* vec4( position.xyz,1));
+  gl_Position =projection*view  * vec4(FragPos,1.0);
+  gl_PointSize = 1.0;
+
+
+
+#ifdef NORMAL
+
+V_Normal =normalize(vec3(model *vec4(normal,0.0)));
+
+
+#ifdef TANGENT
+vec3 T = normalize(vec3(model * vec4(tangent.xyz,   0.0)));
+  vec3 B = normalize(cross(V_Normal, T) *tangent.w );
+    v_TBN = mat3(T, B, V_Normal);
+
+
+#endif
+
+#endif
+
+
+  #ifdef COLOR
+  Color = color;
+  #endif
+
+  #ifdef TEXT_0
+  v_UV[0] = TextureCoord_0;
+  #else
+  v_UV[0] = vec2(0.,0.);
+
+  #endif
+
+  #ifdef TEXT_1
+  v_UV[1] = TextureCoord_1;
+  #else
+
+  v_UV[1] = vec2(0.,0.);
+#endif
+
+
+
+}
+`;
+
+      var fragmentShaderSource = `#version 300 es
+
+precision highp float;
+
+
+#ifdef BASE_TEXTURE
+uniform sampler2D Base_color_texture;
+uniform int F_BaseColorTexCoord;
+#endif
+
+
+#ifdef NORMAL_TEXTURE
+uniform sampler2D Normal_texture;
+uniform int F_Normal_textureCoord;
+#endif
+
+
+#ifdef NORMAL
+in vec3 V_Normal;
+#ifdef TANGENT
+in mat3 v_TBN;
+#endif
+#endif
+
+#ifdef METALLIC_ROUGH_TEXTURE
+uniform sampler2D Metallic_rough_texture;
+uniform int F_Metallic_rough_textureCoord;
+
+#endif
+
+#if defined TEXT_0 || defined TEXT_1
+// out vec2 v_texcoord_0;
+in vec2 v_UV[2];
+#endif
+
+#ifdef OCCLUSION_TEXTURE
+uniform sampler2D Occlusion_Texture;
+uniform int F_Occlusion_TextureCoord;
+
+#endif
+
+#ifdef EMISSIVE_TEXTURE
+uniform sampler2D Emissive_Texture;
+uniform int F_Emissive_TextureCoord;
+#endif
+
+
+
+#ifdef COLOR
+  in vec4 Color;
+  #endif
+
+in vec3 FragPos;
+#define LightPos vec3(10.0,10.0,10.0) 
+
+out vec4 FragColor;
+#define lightColor  vec3(1.0,1.0,1.0)
+#define x 1.0
+
+
+
+vec4 objectColor;
+
+vec3 specularReflection(float cosTheta, vec3 F0)
+{
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+
+
+uniform vec3 CAMERA;
+#define LIGHT_CLR vec3(1.0,1.0,1.0)
+
+
+float geometricOcclusion(vec3 N, vec3 V, vec3 L, float roughness)
+{
+  float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
+
+
+}
+
+float PI = 3.14159265358979323846;
+float microfacetDistribution(vec3 N, vec3 H, float roughness)
+{
+  float a = roughness*roughness;
+    float a2 = a*a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+
+    float nom   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+
+vec3 diffuse(vec3 diffuseColor)
+{
+    return diffuseColor / PI;
+}
+
+void main() {
+
+
+  #ifdef BASE_TEXTURE
+   objectColor = texture(Base_color_texture,v_UV[F_BaseColorTexCoord]);
+
+  #else
+   objectColor = vec4(1.0,1.0,1.0,1.0);
+  #endif
+  #ifdef BASE_COLOR
+  
+  objectColor = objectColor * BASE_COLOR  ;
+  
+  
+  #endif
+
+  #ifdef COLOR
+  
+  objectColor =  Color * objectColor;
+  
+  #endif
+
+#if defined NORMAL || defined NORMAL_TEXTURE 
+vec3 F_Normal = vec3(0.0);
+
+#ifdef NORMAL_TEXTURE
+
+  F_Normal = normalize(texture(Normal_texture,v_UV[F_Normal_textureCoord] ).rgb);
+  F_Normal = normalize(F_Normal * 2.0 - 1.0);  
+
+  #ifdef NORMAL_SCALE
+  F_Normal =  F_Normal * vec3(NORMAL_SCALE,NORMAL_SCALE,1.0);  
+ #endif
+
+
+
+#endif
+
+#if defined NORMAL 
+
+F_Normal+=V_Normal;
+
+#endif
+
+#ifdef TANGENT
+F_Normal = normalize(F_Normal);
+ F_Normal = normalize(v_TBN * F_Normal); 
+ #endif
+#if  ! defined DOUBLE_SIDED
+ F_Normal *=-1.0;
+ 
+ #endif
+
+
+ vec3 V = normalize(CAMERA-FragPos);
+ vec3 L = normalize((LightPos - FragPos));
+  vec3 H = normalize(V + L);
+
+
+  float metallic = 1.0;
+
+  float roughness =1.0 ;
+ #ifdef METALLIC_ROUGH_TEXTURE
+
+
+ vec4 metallicRoughnessValues = texture(Metallic_rough_texture, v_UV[F_Metallic_rough_textureCoord]);
+ metallic= metallicRoughnessValues.r; 
+ roughness = metallicRoughnessValues.g;
+
+
+
+
+ #ifdef METALLIC_FACTOR
+ metallic*=METALLIC_FACTOR
+ #endif
+  
+
+
+
+  #ifdef ROUGHNESS_FACTOR
+  roughness*= ROUGHNESS_FACTOR;
+  #endif
+
+  vec3 F0 = vec3(0.04); 
+  
+
+    F0 = mix(F0, objectColor.xyz, metallic);
+
+        float distance = length(LightPos - FragPos);
+        float attenuation = 1.0 / (distance * distance);
+        vec3 radiance = LIGHT_CLR * attenuation;
+
+        vec3 F = specularReflection(clamp(dot(H, V), 0.0, 1.0),F0);
+        float G = geometricOcclusion(F_Normal,V,L,roughness );
+        float D = microfacetDistribution(F_Normal,H,roughness);
+
+        float NdotL = clamp(dot(F_Normal, L), 0.001, 1.0);
+    float NdotV = clamp(abs(dot(F_Normal, V)), 0.001, 1.0);
+
+        vec3 diffuseContrib = (1.0 - F) * diffuse(objectColor.xyz);
+        vec3 specContrib = F * G * D / (4.0 * NdotL * NdotV);
+        vec3 color = NdotL * LIGHT_CLR  * (diffuseContrib + specContrib);
+
+        color += LIGHT_CLR * 0.70 * objectColor.xyz; //ambient color
+        objectColor.xyz = color;
+
+
+
+#else
+
+
+
+    float diff = max(dot( L,F_Normal), 0.0);
+    vec3 diffuse = lightColor * diff;
+
+
+    float specularStrength = 1.0;
+
+    vec3 reflectDir =normalize( reflect(-L, F_Normal));  
+    float spec =pow((max(dot(V, reflectDir),0.0)),32.0);
+    vec3 specular = lightColor * spec * specularStrength;
+
+
+    objectColor.xyz =((diffuse + specular+0.3) * objectColor.xyz);
+    #endif
+
+#endif 
+
+#ifdef OCCLUSION_TEXTURE
+
+float occlusion =  texture(Occlusion_Texture, v_UV[F_Occlusion_TextureCoord]).r;
+  // #define OCCLUSION_STRENGTH 2.0
+    #ifdef OCCLUSION_STRENGTH
+    occlusion  = 1.0+ OCCLUSION_STRENGTH * (occlusion-1.0);
+    #endif 
+
+
+objectColor.xyz*=occlusion;
+#endif 
+
+#if defined EMISSIVE_TEXTURE || defined EMISSIVE_FACETOR
+vec3 emissive = vec3(1.0,1.0 ,1.0);
+
+
+
+  #ifdef EMISSIVE_TEXTURE
+  emissive = texture(Emissive_Texture, v_UV[F_Emissive_TextureCoord]).rgb ;
+    
+  #endif
+
+  #ifdef EMISSIVE_FACETOR
+  emissive *= EMISSIVE_FACETOR;
+  #endif 
+  objectColor.xyz+=emissive;
+#endif
+
+#ifdef OPAQUE
+
+objectColor.w = 1.0;
+
+#endif
+#ifdef ALPHACUTOFF
+
+float alpha;
+    if (ALPHACUTOFF >= 0.0) {
+      alpha = step(ALPHACUTOFF, objectColor.w);
+    }
+  
+    if (alpha == 0.0) {
+      
+        discard;
+    }
+    else {
+      objectColor.w = 1.0;
+      
+
+    }
+  #endif
+
+
+    FragColor = objectColor ;
+}
+`;
+
+      const ATTRIBUTE_TYPE = {
+        POSITION: 0,
+        NORMAL: 1,
+        TANGENT: 3,
+        TEXCOORD_0: 2,
+        TEXCOORD_1: 5,
+        TEXCOORD_2: 'TextureCoord_2',
+        TEXCOORD_3: 'TextureCoord_3',
+        COLOR_0: 4,
+        WEIGHTS_0: 'skinWeight',
+        JOINTS_0: 'skinIndex',
+      };
+
+      const ALPHA_MODES = {
+        OPAQUE: 'OPAQUE',
+        MASK: 'MASK',
+        BLEND: 'BLEND'
+      };
+
+      const ACCESSOR_COMPONENR = {
+        5120: Int8Array,
+        5121: Uint8Array,
+        5122: Int16Array,
+        5123: Uint16Array,
+        5125: Uint32Array,
+        5126: Float32Array
+      };
+      const ACCESSORS_SIZE = {
+        'SCALAR': 1,
+        'VEC2': 2,
+        'VEC3': 3,
+        'VEC4': 4,
+        'MAT2': 4,
+        'MAT3': 9,
+        'MAT4': 16
+      };
+
+      let map = new Map();
+
+      /** @type {HTMLCanvasElement} */
+      var canvas = document.querySelector("#canvas")
+      var gl = canvas.getContext("webgl2");
+      if (!gl) {
+        return;
+      }
+      // const loader =new GLTF_Loader("../Assets/steam/scene.gltf",gl)
+
+      // await loader.Load()
+
+      var shader1, shader2, program;
+      function compile_shader(V_Source, F_Source) {
+        shader1 = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(shader1, V_Source);
+        gl.compileShader(shader1);
+        if (!gl.getShaderParameter(shader1, gl.COMPILE_STATUS)) {
+          const error1 = gl.getShaderInfoLog(shader1);
+          console.error(error1);
+        }
+
+
+        shader2;
+        shader2 = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(shader2, F_Source);
+        gl.compileShader(shader2);
+        if (!gl.getShaderParameter(shader2, gl.COMPILE_STATUS)) {
+          const error = gl.getShaderInfoLog(shader2);
+          console.error(error);
+        }
+
+        var program = gl.createProgram();
+        gl.attachShader(program, shader1);
+        gl.attachShader(program, shader2);
+        gl.linkProgram(program);
+
+        const linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+
+if (!linked) {
+  const error = gl.getProgramInfoLog(program);
+  console.error('Program link error: ' + error);
+}
+
+        return program;
+      }
+  
+      var RENDER_DATA = [];
+
+      var nodemat_map = new Map();
+      var render_map = new Map()
+
+      function traverseNodes(ROOT_NODE, gltf, matrix) {
+
+        const CURRENT_NODE = gltf.nodes[ROOT_NODE]
+
+        // console.log(CURRENT_NODE)
+        var NodeMat = CURRENT_NODE.matrix || m4.identity();
+        
+        var translation = CURRENT_NODE.translation || [0, 0, 0]
+        var rotation = CURRENT_NODE.rotation || [0, 0, 0, 1]
+        var scale = CURRENT_NODE.scale || [1, 1, 1]
+      
+        // console.log(NodeMat,translation,rotation,scale)
+        var matrix1 = m4.compose(translation, rotation, scale);
+
+        matrix1 = m4.multiply(matrix1, NodeMat)// Local Matrix transformation
+
+        nodemat_map.set(ROOT_NODE,matrix1)
+
+        matrix1 = m4.multiply(matrix, matrix1)// Global Matrix transformation
+
+        
+        // console.log(ROOT_NODE);
+        
+
+        if (CURRENT_NODE.mesh != undefined) {
+      
+          const MESH_DATA = ExtractMeshData(CURRENT_NODE.mesh, gltf)
+          
+          RENDER_DATA.push({ MESH_DATA, matrix1, ROOT_NODE })
+          
+          render_map.set(ROOT_NODE,matrix1)
+          let Return_mesh = true
+
+        }
+
+        const CHILDREN = CURRENT_NODE.children
+
+        for (let CHILD in CHILDREN) {
+          // console.log(CURRENT_NODE.children,child123)
+
+          traverseNodes(CHILDREN[CHILD], gltf, matrix1)
+        }
+
+      }
+
+      function ExtractMeshData(index, gltf) {
+        const MESH = gltf.meshes[index];
+        let PRIMITIVE_RESULT = [];
+        var NUMBER_OF_ELEMENT = 0
+
+        for (let primitive in MESH.primitives) {
+          var Recompile_attrib = []
+          var vao = gl.createVertexArray();
+          gl.bindVertexArray(vao);
+
+          const PRIMITIVE = MESH.primitives[primitive]
+          const ATTRIBUTES = PRIMITIVE.attributes
+          
+          for (let attribute in ATTRIBUTES) {
+
+
+            const ATTRIBUTE_RESULT = ResolveAccessor(ATTRIBUTES[attribute], gltf, attribute);
+
+
+            var TARGET = ATTRIBUTE_RESULT.BUFFER_VIEW_RESULT.BUFFER_TARGET;
+            const stride = ATTRIBUTE_RESULT.BUFFER_VIEW_RESULT.STRIDE;
+            const BIN = ATTRIBUTE_RESULT.RAW_BIN;
+            const TYPE = ATTRIBUTE_RESULT.DATA_TYPE;
+            const COUNT = ATTRIBUTE_RESULT.COUNT;
+            const COMPONENT = ATTRIBUTE_RESULT.COMPONENT;
+            const OFFSET = ATTRIBUTE_RESULT.OFFSET;
+            var NORMALIZED = ATTRIBUTE_RESULT.NORMALIZED;
+            NUMBER_OF_ELEMENT = COUNT
+
+            
+            if (NORMALIZED === undefined) {
+              NORMALIZED = false;
+            }
+            NUMERIC_DATA = new ACCESSOR_COMPONENR[COMPONENT](BIN);
+           
+            var Attrib_loc = ATTRIBUTE_TYPE[attribute];
+            Recompile_attrib.push(ATTRIBUTE_TYPE[attribute])
+            // console.log(attribute)
+
+            if (TARGET === undefined) {
+              TARGET = 34962;
+
+            }
+
+            var BUFFER = gl.createBuffer();
+            gl.bindBuffer(TARGET, BUFFER);
+            gl.bufferData(TARGET, BIN, gl.STATIC_DRAW);
+
+            gl.enableVertexAttribArray(Attrib_loc);
+            // console.log(Attrib_loc, COMPONENT, ACCESSORS_SIZE[TYPE], NORMALIZED, ATTRIBUTE_RESULT.NUMERIC_DATA)
+            // console.log(NUMERIC_DATA,attribute,ACCESSOR_COMPONENR[COMPONENT],NORMALIZED)
+            gl.vertexAttribPointer(Attrib_loc, ACCESSORS_SIZE[TYPE], COMPONENT, NORMALIZED, stride, OFFSET);
+
+
+          }
+
+          var MATERIAL = {};
+          MATERIAL.Data = false
+          // console.log(PRIMITIVE.material)
+          if (PRIMITIVE.material != undefined) {
+            MATERIAL = LoadMaterial(PRIMITIVE.material, gltf);
+            MATERIAL.Data = true
+          }
+          // MATERIAL.SHADER = 0
+          
+
+
+          // console.log(PRIMITIVE,NUMBER_OF_ELEMENT)
+          var ATTRIBUTE_RESULT1 =0 ;
+          var indexedArray = false
+          if(PRIMITIVE.indices!==undefined) {
+           ATTRIBUTE_RESULT1 = ResolveAccessor(PRIMITIVE.indices, gltf);
+          const bin = ATTRIBUTE_RESULT1.RAW_BIN;
+          var TARGET = ATTRIBUTE_RESULT1.BUFFER_VIEW_RESULT.BUFFER_TARGET;
+          indexedArray = true
+          
+          NUMBER_OF_ELEMENT = ATTRIBUTE_RESULT1.COUNT 
+
+          if (TARGET === undefined) {
+            TARGET = 34963;
+            
+
+          }
+
+          var BUFFER = gl.createBuffer();
+          gl.bindBuffer(TARGET, BUFFER);
+          gl.bufferData(TARGET, bin, gl.STATIC_DRAW);
+        }
+        if (PRIMITIVE.mode === undefined) {
+            PRIMITIVE.mode = gl.TRIANGLES
+          }
+
+          gl.bindVertexArray(null);
+          // NUMBER_OF_ELEMENT = ATTRIBUTE_RESULT1.COUNT ;
+          
+
+          // console.log({NUMBER_OF_ELEMENT : ATTRIBUTE_RESULT1.COUNT,DATA_TYPE:ATTRIBUTE_RESULT1.COMPONENT,MODE: PRIMITIVE.mode})
+
+          // console.log(NUMBER_OF_ELEMENT)
+          PRIMITIVE_RESULT.push({ MATERIAL, vao, NUMBER_OF_ELEMENT, indexedArray , DATA_TYPE: ATTRIBUTE_RESULT1.COMPONENT, MODE: PRIMITIVE.mode, Recompile_attrib })
+
+        }
+
+        return PRIMITIVE_RESULT;
+
+
+      }
+      // mat =[]
+      let mat = new Map();
+      function LoadMaterial(index, gltf) {
+        // console.log(index)
+        // mat.push(index)
+        // console.log(mat[index])
+
+        if (mat.has(index)) {
+          // console.log(mat.get(index))
+          return mat.get(index);
+        }
+        const MATERIAL = gltf.materials[index];
+
+        var Material_Parameters = {};
+        var Texture_IDs = {};
+
+        // var EMISSIVE_FACETOR = [0.0, 0.0, 0.0];
+        var DOUBLE_SIDED = false;
+        
+
+        if (MATERIAL.emissiveFactor !== undefined) {
+
+          Material_Parameters.EMISSIVE_FACETOR = MATERIAL.emissiveFactor
+        }
+
+
+        var ALPHA_MODE = "OPAQUE"
+        
+        if (MATERIAL.alphaMode !== undefined) {
+          // console.log("oppppppppppppppppp",MATERIAL.alphaMode)
+          ALPHA_MODE = ALPHA_MODES[MATERIAL.alphaMode];
+
+          if (ALPHA_MODE === "MASK") {
+            Material_Parameters.ALPHA_MODE = ALPHA_MODE;
+            var ALPHA_CUT_OFF = 0.5;
+            if (MATERIAL.alphaCutoff !== undefined) {
+              
+              ALPHA_CUT_OFF = MATERIAL.alphaCutoff
+              Material_Parameters.ALPHA_CUT_OFF = ALPHA_CUT_OFF
+
+            }
+          }
+          
+        }
+
+        Material_Parameters.ALPHA_MODE = ALPHA_MODE
+       
+
+        Material_Parameters.DOUBLE_SIDED = false;
+        if (MATERIAL.doubleSided !== undefined) {
+          Material_Parameters.DOUBLE_SIDED = MATERIAL.doubleSided;
+        }
+
+       
+
+        // console.log(MATERIAL);
+
+
+
+
+        if (MATERIAL.pbrMetallicRoughness !== undefined) {
+
+          const METALLIC_ROUGHNESS = MATERIAL.pbrMetallicRoughness
+          // var BASE_COLOR = [1.0, 1.0, 1.0, 1.0];
+          // var METALLIC_FACTOR = 1.0;
+          // var ROUGHNESS_FACTOR = 1.0;
+          if (METALLIC_ROUGHNESS.baseColorFactor != undefined) {
+            var BASE_COLOR = METALLIC_ROUGHNESS.baseColorFactor;
+            Material_Parameters.BASE_COLOR = BASE_COLOR;
+          };
+
+          if (METALLIC_ROUGHNESS.metallicFactor != undefined) {
+            var METALLIC_FACTOR = METALLIC_ROUGHNESS.metallicFactor;
+            Material_Parameters.METALLIC_FACTOR = METALLIC_FACTOR;
+
+          }
+          if (METALLIC_ROUGHNESS.roughnessFactor != undefined) {
+            var ROUGHNESS_FACTOR = METALLIC_ROUGHNESS.roughnessFactor;
+            Material_Parameters.ROUGHNESS_FACTOR = ROUGHNESS_FACTOR;
+
+          }
+
+
+
+          // console.log(Material_Parameters)
+
+
+          if (METALLIC_ROUGHNESS.baseColorTexture != undefined) {
+            const Texture_Index = METALLIC_ROUGHNESS.baseColorTexture.index;
+            const BASE_COLOR_TEXTURE_ID = Get_Texture(Texture_Index, gltf);
+            Texture_IDs.BASE_COLOR_TEXTURE_ID = BASE_COLOR_TEXTURE_ID;
+            Texture_IDs.BASE_COLOR_TEXTURE_COORDINATE = METALLIC_ROUGHNESS.baseColorTexture.texCoord || 0
+            // console.log(METALLIC_ROUGHNESS.baseColorTexture.texCoord )
+          }
+          if (METALLIC_ROUGHNESS.metallicRoughnessTexture != undefined) {
+            const Texture_Index = METALLIC_ROUGHNESS.metallicRoughnessTexture.index;
+            const METALLIC_ROUGHNESS_TEXTURE_ID = Get_Texture(Texture_Index, gltf);
+            Texture_IDs.METALLIC_ROUGHNESS_TEXTURE_ID = METALLIC_ROUGHNESS_TEXTURE_ID;
+            Texture_IDs.METALLIC_ROUGHNESS_TEXTURE_COORDINATE = METALLIC_ROUGHNESS.metallicRoughnessTexture.texCoord || 0;
+            // console.log(METALLIC_ROUGHNESS.metallicRoughnessTexture)
+          }
+
+
+        }
+
+
+
+
+
+        if (MATERIAL.normalTexture !== undefined) {
+          // var NORMAL_SCALE = 1.0;
+          const NORMAL = MATERIAL.normalTexture
+          const Texture_Index = NORMAL.index;
+          if (NORMAL.scale !== undefined) {
+            var NORMAL_SCALE = NORMAL.scale
+            Material_Parameters.NORMAL_SCALE = NORMAL_SCALE;
+          }
+
+
+          const NORMAL_TEXTURE_ID = Get_Texture(Texture_Index, gltf);
+          Texture_IDs.NORMAL_TEXTURE_ID = NORMAL_TEXTURE_ID;
+          Texture_IDs.NORMAL_TEXTURE_COORDINATE = NORMAL.texCoord || 0
+          // console.log(MATERIAL.normalTexture)
+        }
+
+
+
+
+
+
+        if (MATERIAL.occlusionTexture !== undefined) {
+          // var OCCLUSION_STRENGTH = 1.0;
+          const OCCLUSION = MATERIAL.occlusionTexture;
+
+          const Texture_Index = OCCLUSION.index;
+          
+          const OCCLUSION_TEXTURE_ID = Get_Texture(Texture_Index, gltf);
+
+          if (OCCLUSION.strength !== undefined) {
+            Material_Parameters.OCCLUSION_STRENGTH =OCCLUSION.strength
+          }
+         
+
+          Texture_IDs.OCCLUSION_TEXTURE_ID = OCCLUSION_TEXTURE_ID;
+          Texture_IDs.OCCLUSION_TEXTURE_COORDINATE = OCCLUSION.texCoord || 0 
+          // console.log(MATERIAL.normalTexture)
+        }
+
+
+
+
+        if (MATERIAL.emissiveTexture !== undefined) {
+          const EMISSIVE = MATERIAL.emissiveTexture;
+          const Texture_Index = EMISSIVE.index;
+          
+
+          const EMISSIVE_TEXTURE_ID = Get_Texture(Texture_Index, gltf);
+          Texture_IDs.EMISSIVE_TEXTURE_ID = EMISSIVE_TEXTURE_ID;
+          Texture_IDs.EMISSIVE_TEXTURE_COORD = EMISSIVE.texCoord || 0 
+        }
+
+
+
+        // if(MATERIAL.)
+
+        // console.log(Texture_IDs, Material_Parameters,MATERIAL)
+
+
+        var SHADER
+        mat.set(index, { Texture_IDs, Material_Parameters,SHADER })
+        // console.log(Texture_IDs)
+        return { Texture_IDs, Material_Parameters };
+
+
+
+
+
+
+
+
+      }
+
+
+      let textures1 = new Map();
+
+      function Get_Texture(index, gltf) {
+        // console.log(textures1.include(index))
+        // textures1.push(index)
+        // if (textures1.has(index)) {
+        //   return textures1[index]
+        // }
+
+
+        const TEXTURE = gltf.textures[index];
+        if (TEXTURE.source !== undefined) {
+          IMAGE = GET_Image(TEXTURE.source, gltf);
+          if (textures1.has(index)) {
+
+            return textures1[IMAGE]
+          }
+
+        }
+        var SAMPLER = {}, IMAGE;
+        if (TEXTURE.sampler !== undefined) {
+          SAMPLER = GET_Sampler(TEXTURE.sampler, gltf);
+        }
+
+
+
+        //  console.log(SAMPLER)
+        var texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+
+        if (SAMPLER.minFilter !== undefined) {
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, SAMPLER.minFilter);
+        }
+        if (SAMPLER.magFilter != undefined) {
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, SAMPLER.magFilter);
+        }
+
+
+        if (SAMPLER.wrapS == undefined) SAMPLER.wrapS = 10497
+        if (SAMPLER.wrapT == undefined) SAMPLER.wrapT = 10497
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, SAMPLER.wrapS);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, SAMPLER.wrapT);
+
+
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+
+
+
+        var image = new Image();
+        image.crossOrigin = "";
+        image.src = PWD + '/' + IMAGE;
+        image.addEventListener('load', function () {
+          // Now that the image has loaded make copy it to the texture.
+
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.bindTexture(gl.TEXTURE_2D, null)
+        });
+
+
+        // else {
+        //   gl.bindTexture(gl.TEXTURE_2D, null)
+        // }
+
+
+
+        textures1.set(IMAGE, texture);
+        return texture;
+
+      }
+
+      function GET_Sampler(index, gltf) {
+        const SAMPLER = gltf.samplers[index];
+        return SAMPLER;
+
+      }
+      function GET_Image(index, gltf) {
+        const IMG = gltf.images[index];
+        // console.log(IMG.uri)
+        return IMG.uri;
+      }
+
+      function ResolveAccessor(index, gltf) {
+
+        const ACCESSOR = gltf.accessors[index];
+        // console.log(ACCESSOR,index)
+        const BUFFER_VIEW_RESULT = ResolveBufferView(ACCESSOR.bufferView, gltf) //RAW BINARY FROM BUFFER VIEW
+        const COMPONENT = ACCESSOR.componentType; //DATA TYPE E.G., FLOAT, INT.
+        const BYTE_OFFSET = ACCESSOR.byteOffset || 0; // FOR SLICING THE BINARY DATA
+        const COUNT = ACCESSOR.count; // defines for howmany values is there here.
+        const DATA_TYPE = ACCESSOR.type; // VEC2,VEC3
+        const NORMALIZED = ACCESSOR.normalized;
+
+        const LENGTH_OF_DATA_TYPE = ACCESSORS_SIZE[DATA_TYPE];
+
+        
+        let RAW_BIN = (BUFFER_VIEW_RESULT.BUFFER_VIEW_BIN).slice(BYTE_OFFSET);
+        // RAW_BIN = RAW_BIN. // AFTER OFFSETING
+        let NUMERIC_DATA;
+        NUMERIC_DATA = new ACCESSOR_COMPONENR[COMPONENT](RAW_BIN);
+
+        
+        // console.log(RAW_BIN)
+        const LENGTH_OF_COMPONENT = (ACCESSOR_COMPONENR[COMPONENT]).BYTES_PER_ELEMENT * (ACCESSOR_COMPONENR[COMPONENT]).length
+        if (ACCESSOR.sparse){
+          
+          // console.log("SPARSE",ACCESSOR.sparse,LENGTH_OF_DATA_TYPE)
+
+
+          var SPARSE_DATA = ResolveBufferView(ACCESSOR.sparse.values.bufferView,gltf).BUFFER_VIEW_BIN
+          SPARSE_DATA = new ACCESSOR_COMPONENR[COMPONENT](SPARSE_DATA)
+
+
+
+         var SPARSE_INDICES = ResolveBufferView(ACCESSOR.sparse.indices.bufferView,gltf).BUFFER_VIEW_BIN
+         SPARSE_INDICES = new ACCESSOR_COMPONENR[ACCESSOR.sparse.indices.componentType](SPARSE_INDICES)
+        //  console.log(NUMERIC_DATA,SPARSE_INDICES,SPARSE_DATA)
+        //  console.log(SPARSE_INDICES)
+         for(i in SPARSE_INDICES){
+          var ind = SPARSE_INDICES[i] * LENGTH_OF_DATA_TYPE
+          var ii = i*LENGTH_OF_DATA_TYPE
+
+          for(let j =0 ;j<LENGTH_OF_DATA_TYPE;j++){
+
+            NUMERIC_DATA[ind+j] = SPARSE_DATA[ii+j]
+          }
+
+          
+
+          
+
+        //   const OFFSET_FROM = (i*LENGTH_OF_COMPONENT) -1
+        //   const OFFSET_TO = (i*LENGTH_OF_COMPONENT) +LENGTH_OF_COMPONENT
+        //   var val = SPARSE_DATA.slice(OFFSET_FROM,OFFSET_TO)
+        //   // RAW_BIN.write(val,SPARSE_INDICES[i] * LENGTH_OF_COMPONENT,'binary')
+        //  RAW_BIN = RAW_BIN.slice(0,OFFSET_FROM) + val + RAW_BIN.slice(OFFSET_TO)
+
+        //   console.log(OFFSET_FROM,OFFSET_TO,RAW_BIN)
+         }
+        //  NUMERIC_DATA = new ACCESSOR_COMPONENR[COMPONENT](RAW_BIN);
+        //  console.log(NUMERIC_DATA)
+         
+        }
+        // console.log(RAW_BIN)
+        // gl.vertexAttribPointer()
+        
+        // console.log(LENGTH_OF_COMPONENT,RAW_BIN)
+
+
+        
+        // console.log(NUMERIC_DATA); //
+
+        // console.log(BYTE_OFFSET, COUNT, DATA_TYPE, LENGTH_OF_DATA_TYPE)
+
+        // console.log(Uint8Array.length)
+        // console.log(NUMERIC_DATA.slice(0, LENGTH_OF_DATA_TYPE * COUNT))
+
+
+        return {
+          BUFFER_VIEW_RESULT,
+          NORMALIZED,
+          NUMERIC_DATA,
+          DATA_TYPE,
+          COUNT,
+          COMPONENT,
+          RAW_BIN,
+          BYTE_OFFSET
+
+        }
+
+      }
+
+      function ResolveBufferView(index, gltf) {
+        const BUFFER_VIEW = gltf.bufferViews[index];
+        const BUFFER_DATA = ExtractBuffer(BUFFER_VIEW.buffer, gltf);
+        let ByteOffset = BUFFER_VIEW.byteOffset;
+        let ByteLength = BUFFER_VIEW.byteLength || 0;
+        let STRIDE = BUFFER_VIEW.byteStride;
+        // console.log(BUFFER_VIEW,BUFFER_VIEW_BIN)
+
+        if (BUFFER_VIEW.byteOffset == undefined) ByteOffset = 0;
+        if (STRIDE == undefined) STRIDE = 0;
+
+
+
+        const BUFFER_VIEW_BIN = BUFFER_DATA.slice(ByteOffset, ByteOffset + ByteLength);
+        const BUFFER_TARGET = BUFFER_VIEW.target
+        // var elements = gl.createBuffer();
+        // gl.bindBuffer( elements);
+
+        return { BUFFER_VIEW_BIN, BUFFER_TARGET, STRIDE };
+
+      }
+
+      function ExtractBuffer(index, gltf) {
+        const Buff = gltf.buffers[index]; //
+
+        return FromBinary(Buff, gltf);
+
+      }
+
+      function FromBinary(index, gltf) {
+
+        const uri = index.uri;
+        const binData = UriMap.get(uri);
+        if (binData.byteLength === index.byteLength) {
+
+          return binData;
+        }
+
+
+
+      }
+
+      let ANIM = new Map();
+
+      function Animation(gltf, then1, now) {
+      render_map.clear();
+      ANIM.clear();
+
+        // console.log(gltf.animations);
+        const ANIMATIONS = gltf.animations[0];
+
+        for (anim in ANIMATIONS.channels) {
+        const CHANNEL = ANIMATIONS.channels[anim];
+        const targetNode = CHANNEL.target.node;
+
+        const animationMatrix = GetAnimationSampler(
+          CHANNEL.sampler,
+          CHANNEL.target,
+          now,
+          then1,
+          gltf
+        );
+
+          ANIM.set(targetNode, animationMatrix);// Store animation matrix in map with node as key
+    
+      }
+
+      for(let [key,value] of ANIM){
+      var flag = 0;
+      var animatrix = m4.identity();
+
+      function traverseNodes(ROOT_NODE, gltf, matrix) {
+
+      const CURRENT_NODE = gltf.nodes[ROOT_NODE]
+      const CHILDREN = CURRENT_NODE.children;
+
+      // for first time store animation matrix in new matrix and use it for all child
+      if (flag == 0) {
+
+      animatrix = ANIM.get(ROOT_NODE); // Animation matrix of node to apply on child nodes stored in animatrix
+
+      flag = 1;
+      }
+
+      var matrix1 = nodemat_map.get(ROOT_NODE);// Local matrix of node
+      matrix1 = m4.multiply(matrix1, animatrix);// Calculating Local matrix with Animation matrix
+
+      // if (ANIM.has(ROOT_NODE)) {
+      //   matrix1 = m4.multiply(matrix1, ANIM.get(ROOT_NODE));
+      // }
+
+      matrix1 = m4.multiply(matrix, matrix1);// Calculating Global matrix with Animation matrix
+
+      if (CURRENT_NODE.mesh != undefined) {
+        if (render_map.has(ROOT_NODE))
+        {
+          matrix1 = m4.multiply( matrix1, animatrix);
+          render_map.set(ROOT_NODE, matrix1);
+        }
+        else
+        {
+        render_map.set(ROOT_NODE, matrix1);
+        }
+        
+      }
+
+      for (let CHILD in CHILDREN) {
+
+        traverseNodes(CHILDREN[CHILD], gltf, matrix1);
+
+      }
+
+      }
+      traverseNodes(key, gltf, m4.identity());
+      }
+                
+      }
+
+      function GetAnimationSampler(index,target,now,then,gltf)
+
+      {
+        const SAMPLER = gltf.animations[0].samplers[index];
+        const INPUT = ResolveAccessor(SAMPLER.input, gltf).NUMERIC_DATA;
+        const OUTPUT = ResolveAccessor(SAMPLER.output, gltf).NUMERIC_DATA;
+
+        const min = INPUT[0];
+        const max = INPUT[INPUT.length - 1];
+
+        now = (now / 1000) % max; // Normalize the time value to be within the range of animation data
+
+        let loc = 0;
+
+        for (let i = 0; i < INPUT.length; i++) {
+          if (INPUT[i] > now && INPUT[i - 1] < now) {
+            loc = i;
+            break;
+          } else if (INPUT[i] === now) {
+            loc = i;
+            break;
+          }
+        }
+
+        const prevkey = loc - 1;
+        const nextkey = loc;
+        const keyDelta = INPUT[nextkey] - INPUT[prevkey];
+        const tn = (now - INPUT[prevkey]) / keyDelta;
+        const stride = 3;
+
+        const INTERPOLATION = SAMPLER.interpolation;
+
+
+          function getQuat(output, index)
+
+          {
+
+          const x = output[4 * index];
+          const y = output[4 * index + 1];
+          const z = output[4 * index + 2];
+          const w = output[4 * index + 3];
+
+          return quat.fromValues(x, y, z, w);
+
+          }
+
+          if(target.path ==="translation" && INTERPOLATION !=="STEP" && INTERPOLATION !=="CUBICSPLINE")
+          {
+
+
+            function linear(prevKey, nextKey, tn, OUTPUT, stride)
+            {
+
+              result = new glMatrix.ARRAY_TYPE(stride);
+
+              for(let i = 0; i < stride; ++i)
+              {
+                result[i] = OUTPUT[prevKey * stride + i] * (1 - tn) + OUTPUT[nextKey * stride + i] * tn;
+              }
+              console.log("Linear Translation", result)
+
+              return (m4.translation(result[0],result[1],result[2]))
+
+            }
+            
+            return (linear(prevkey, nextkey, tn, OUTPUT, stride));
+
+          }
+
+          else if(target.path ==="scale" && INTERPOLATION !=="STEP" && INTERPOLATION !=="CUBICSPLINE")
+          {
+          
+          
+            function linear(prevKey, nextKey, tn, OUTPUT, stride)
+            {
+              result = new glMatrix.ARRAY_TYPE(stride);
+
+              for(let i = 0; i < stride; ++i)
+              {
+                result[i] = OUTPUT[prevKey * stride + i] * (1 - tn) + OUTPUT[nextKey * stride + i] * tn;
+              }
+              console.log(result)
+          
+              return (m4.scaling(result[0],result[1],result[2]))
+            }
+
+            return (linear(prevkey, nextkey, tn, OUTPUT, stride));
+
+          }
+
+          else if(target.path ==="translation" && INTERPOLATION ==="STEP")
+          {
+
+              const prevkey= loc
+              const stride = 3
+
+              function step(prevKey, OUTPUT, stride)
+              {
+                result = new glMatrix.ARRAY_TYPE(stride);
+
+                for(let i = 0; i < stride; ++i)
+                {
+                result[i] = OUTPUT[prevKey * stride + i];
+                }
+                console.log("Step Translation", result)
+            
+                return (m4.translation(result[0],result[1],result[2]))
+              }
+
+              return (step (prevkey, OUTPUT, stride));
+            }
+
+
+
+            else if(target.path ==="translation" && INTERPOLATION ==="CUBICSPLINE")
+            {
+              console.log("cubic")
+      
+              function cubicSpline(prevKey, nextKey, output, keyDelta, t, stride)
+              {
+                  
+                  const prevIndex = prevKey * stride * 3;
+                  const nextIndex = nextKey * stride * 3;
+                  const A = 0;
+                  const V = 1 * stride;
+                  const B = 2 * stride;
+
+                  const result = new glMatrix.ARRAY_TYPE(stride);
+                  const tSq = t ** 2;
+                  const tCub = t ** 3;
+
+                  for(let i = 0; i < stride; ++i)
+                  {
+                      const v0 = output[prevIndex + i + V];
+                      const a = keyDelta * output[nextIndex + i + A];
+                      const b = keyDelta * output[prevIndex + i + B];
+                      const v1 = output[nextIndex + i + V];
+
+                      result[i] = ((2*tCub - 3*tSq + 1) * v0) + ((tCub - 2*tSq + t) * b) + ((-2*tCub + 3*tSq) * v1) + ((tCub - tSq) * a);
+                      
+                  }
+                  return (m4.translation(result[0],result[1],result[2]))
+
+              }
+
+              return (cubicSpline(prevkey, nextkey, OUTPUT, keyDelta, tn, stride));
+            }
+
+              
+              else if (target.path === "rotation"  && INTERPOLATION ==="CUBICSPLINE")
+              {
+
+                const stride1 = 4
+
+                function cubicSpline1(prevKey, nextKey, output, keyDelta, t, stride)
+                {
+                    
+                    const prevIndex = prevKey * stride * 3;
+                    const nextIndex = nextKey * stride * 3;
+                    const A = 0;
+                    const V = 1 * stride;
+                    const B = 2 * stride;
+
+                    const result = new glMatrix.ARRAY_TYPE(stride);
+                    const tSq = t ** 2;
+                    const tCub = t ** 3;
+
+                    for(let i = 0; i < stride; ++i)
+                    {
+                        const v0 = output[prevIndex + i + V];
+                        const a = keyDelta * output[nextIndex + i + A];
+                        const b = keyDelta * output[prevIndex + i + B];
+                        const v1 = output[nextIndex + i + V];
+
+                        result[i] = ((2*tCub - 3*tSq + 1) * v0) + ((tCub - 2*tSq + t) * b) + ((-2*tCub + 3*tSq) * v1) + ((tCub - tSq) * a);
+                        
+                      }
+                      
+                const matResult = mat4.create();
+                mat4.fromQuat(matResult, result);
+                return (matResult)
+                 
+                }
+
+                return (cubicSpline1(prevkey, nextkey, OUTPUT, keyDelta, tn, stride1));
+
+              }
+
+              else if (target.path === "rotation"  && INTERPOLATION ==="STEP")
+            {
+                quatstep = getQuat(OUTPUT,prevkey)
+                const matResult = mat4.create();
+                mat4.fromQuat(matResult, quatstep);
+                return (matResult)
+                
+            }
+
+              else if (target.path === "rotation" && INTERPOLATION !== "CUBICSPLINE" && INTERPOLATION !== "STEP")
+              {
+                
+                     
+                
+                const q0 = getQuat(OUTPUT, prevkey);
+                const q1 = getQuat(OUTPUT, nextkey);
+
+                function slerpQuat(q1, q2, t)
+                {
+                    const qn1 = quat.create();
+                    const qn2 = quat.create();
+
+                    quat.normalize(qn1, q1);
+                    quat.normalize(qn2, q2);
+
+                    const quatResult = quat.create();
+
+                    quat.slerp(quatResult, qn1, qn2, t);
+                    quat.normalize(quatResult, quatResult);
+
+                    return quatResult;
+                }
+
+                const quatResult =  slerpQuat(q0, q1, tn)
+                const matResult = mat4.create();
+                mat4.fromQuat(matResult, quatResult);
+                console.log("Linear Rotation", matResult)
+                return (matResult)
+
+              }           
+
+        }//END of Animation
+
+   
+      function Recompiling_Shader() {
+        var mp = new Map();
+
+        for (RENDER in RENDER_DATA) {
+
+
+
+          for (j in RENDER_DATA[RENDER].MESH_DATA) {
+            // console.log(RENDER_DATA[RENDER].MESH_DATA[j])
+            var Fsh = "#version 300 es\n"
+            var Vsh = "#version 300 es\n"
+            if (RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Data) {
+
+
+              if (RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Texture_IDs !== undefined) {
+                // var Bt=false,Nt = false,Mt = false,Ot = false,Et = false
+                for (i in RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Texture_IDs) {
+                  if (i == "BASE_COLOR_TEXTURE_ID") {
+                    Fsh = Fsh + "#define BASE_TEXTURE\n"
+                    // Bt = true
+                  }
+                  //  console.log(i)
+                  if (i == "NORMAL_TEXTURE_ID") {
+                    Fsh = Fsh + "#define NORMAL_TEXTURE\n"
+                    // Nt= true
+
+                  }
+                  if (i == "METALLIC_ROUGHNESS_TEXTURE_ID") {
+                    Fsh = Fsh + "#define METALLIC_ROUGH_TEXTURE\n"
+                    // Mt = true
+                  }
+
+                  if (i == "OCCLUSION_TEXTURE_ID") {
+                    Fsh = Fsh + "#define OCCLUSION_TEXTURE\n"
+                    // Ot = false
+                  }
+
+                  if (i == "EMISSIVE_TEXTURE_ID") {
+                    Fsh = Fsh + "#define EMISSIVE_TEXTURE\n"
+                    // Et = false
+                  }
+                }
+              }
+              if (RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Material_Parameters !== undefined) {
+                var arr
+                for (MAT_PARAM in RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Material_Parameters) {
+                  //  console.log(RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Material_Parameters[MAT_PARAM])
+                  
+                  var value = RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.Material_Parameters[MAT_PARAM]
+                  // console.log(value,MAT_PARAM)
+                  if (MAT_PARAM ==='DOUBLE_SIDED'){
+                    RENDER_DATA[RENDER].doubleSided = value
+                    if(value){
+                      Fsh = Fsh + "#define DOUBLE_SIDED\n"
+
+                    }
+                  }
+                  
+                  if(value == "MASK"){
+
+                    Fsh = Fsh + "#define MASK\n"
+                  }
+                  if(MAT_PARAM == "ALPHA_CUT_OFF"){
+                    Fsh = Fsh + "#define ALPHACUTOFF float("+String(value) +")\n"
+                  }
+                  if(value == "OPAQUE"){
+
+                    Fsh = Fsh + "#define OPAQUE\n"
+                  }
+
+                  if (MAT_PARAM == "EMISSIVE_FACETOR" && value !== undefined) {
+                    arr = value;
+                    Fsh = Fsh + "#define EMISSIVE_FACETOR vec3( " + String(value) + ") \n"
+
+                  }
+                  
+                  else if (MAT_PARAM == "BASE_COLOR" && value !== undefined) {
+                    arr = value;
+                    
+                    Fsh = Fsh + "#define BASE_COLOR vec4(" + String(value) + ") \n"
+
+
+                  }
+                  else if (MAT_PARAM == "METALLIC_FACTOR" && value !== undefined) {
+                    arr = value;
+                    Fsh = Fsh + "#define METALLIC_FACTOR float(" + String(value) + ") \n"
+
+                  }
+                  else if (MAT_PARAM == "ROUGHNESS_FACTOR" && value !== undefined) {
+                    arr = value;
+                    Fsh = Fsh + "#define ROUGHNESS_FACTOR float(" + String(value) + ") \n"
+
+                  }
+                  else if (MAT_PARAM == "NORMAL_SCALE" && value !== undefined) {
+                    arr = value;
+                    Fsh = Fsh + "#define NORMAL_SCALE float(" + String(value) + ") \n"
+
+                  }
+                  else if (MAT_PARAM == "OCCLUSION_STRENGTH" && value !== undefined) {
+
+                    arr = value;
+                    Fsh = Fsh + "#define OCCLUSION_STRENGTH float(" + String(value) + ") \n"
+
+                  }
+
+                }
+              }
+            }
+
+
+            for (i in RENDER_DATA[RENDER].MESH_DATA[j].Recompile_attrib) {
+              var UniformVar = RENDER_DATA[RENDER].MESH_DATA[j].Recompile_attrib[i]
+              // console.log(UniformVar)
+              if (UniformVar == 0) {
+                Vsh = Vsh + "#define POSITION\n"
+
+
+              }
+              else if (UniformVar == 1) {
+                Vsh = Vsh + "#define NORMAL\n"
+                Fsh = Fsh + "#define NORMAL\n"
+
+              }
+              else if (UniformVar == 3) {
+                Vsh = Vsh + "#define TANGENT\n"
+                Fsh = Fsh + "#define TANGENT\n"
+
+              }
+              else if (UniformVar == 2) {
+                Vsh = Vsh + "#define TEXT_0\n"
+                Fsh = Fsh + "#define TEXT_0\n"
+
+              }
+              else if (UniformVar == 4) {
+                Vsh = Vsh + "#define COLOR\n"
+                Fsh = Fsh + "#define COLOR\n"
+
+              }
+              else if (UniformVar == 5){
+
+                Vsh = Vsh + "#define TEXT_1\n"
+                Fsh = Fsh + "#define TEXT_1\n"
+
+              }
+              // console.log(UniformVar)
+
+
+            }
+            // console.log(Vsh)
+            Vsh = Vsh + vertexShaderSource.slice(15)
+            Fsh = Fsh + fragmentShaderSource.slice(15)
+            var SH = Vsh + Fsh
+
+            if (mp.has(SH)) {
+              // console.log(Fsh)
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER = mp.get(SH)
+              // RENDER.push(SHADER)
+
+
+            }
+            else {
+              // console.log(Vsh + vertexShaderSource.slice(15), Fsh + fragmentShaderSource.slice(15))
+              var sh = compile_shader(Vsh, Fsh)
+              console.log(Vsh, Fsh)
+              // console.log(RENDER_DATA[RENDER].MESH_DATA[j])
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER = sh
+              // console.log(gl.getUniformLocation(sh, "Base_color_texture") )
+              if(gl.getUniformLocation(sh, "Base_color_texture")){
+              
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.BaseTextureLoc = gl.getUniformLocation(sh, "Base_color_texture")
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.BaseTextureCoord = gl.getUniformLocation(sh, "F_BaseColorTexCoord")
+              }
+
+
+              if( gl.getUniformLocation(sh, "Normal_texture")){
+                RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.NormalTextLoc = gl.getUniformLocation(sh, "Normal_texture")
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.NormalTextCoord = gl.getUniformLocation(sh, "F_Normal_textureCoord")
+              }
+
+
+              if( gl.getUniformLocation(sh, "Metallic_rough_texture")){
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.mettalicroughTextureLoc = gl.getUniformLocation(sh, "Metallic_rough_texture")
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.mettalicroughTextureCoord = gl.getUniformLocation(sh, "F_Metallic_rough_textureCoord")
+
+              }
+
+
+              if(gl.getUniformLocation(sh, "Occlusion_Texture")){
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.occlusionTexturesLoc = gl.getUniformLocation(sh, "Occlusion_Texture")
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.occlusionTexturesCoord = gl.getUniformLocation(sh, "F_Occlusion_TextureCoord")
+              }
+
+              if(gl.getUniformLocation(sh, "Emissive_Texture")){
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.emissiveTexturesLoc = gl.getUniformLocation(sh, "Emissive_Texture")
+              RENDER_DATA[RENDER].MESH_DATA[j].MATERIAL.SHADER.emissiveTexturesCoord = gl.getUniformLocation(sh, "F_Emissive_TextureCoord")
+              }
+
+
+              mp.set(SH, sh)
+
+            }
+
+
+
+          }
+          // console.log(mp)
+        }
+
+      }
+
+      //OPTION 1
+      // getJson(apiUrl)
+      //     .then(data => console.log(data));
+
+      // bin = bin.slice(4,16);
+      // let uin = new Uint16Array(bin);
+      // console.log(uin);
+
+      //OPTION 2
+
+      const gltf = await getJson(apiUrl);
+      for (bufferData in gltf.buffers) {
+
+        const url = PWD + '/' + gltf.buffers[bufferData].uri;
+
+        bin = await getBin(url);
+
+        UriMap.set(gltf.buffers[bufferData].uri, bin)
+
+      }
+
+      // console.log(gltf.scene)
+      var ROOT_NODE;
+      if (gltf.scene == undefined) {
+        ROOT_NODE = gltf.scenes[0].nodes
+      }
+      else {
+        ROOT_NODE = gltf.scenes[gltf.scene].nodes;
+      }
+
+      for(rn in ROOT_NODE){
+
+traverseNodes(rn, gltf,m4.identity());
+
+}
+      // const SCENE = traverseNodes(ROOT_NODE, gltf, m4.identity());
+
+      // console.log(ResolveAccessor(60,gltf))
+
+      Recompiling_Shader()
+      let th1 = performance.now();
+      // console.log(RENDER_DATA)
+      let then1 = performance.now();
+      requestAnimationFrame(drawScene);
+      function degToRad(d) {
+        return d * Math.PI / 180;
+      }
+
+      // First let's make some variables
+      // to hold the translation,
+      var fieldOfViewRadians = degToRad(60);
+      var modelXRotationRadians = degToRad(0);
+      var modelYRotationRadians = degToRad(0);
+      var then = 0;
+      var ias = 0
+      
+      function drawScene(now) {
+
+      
+        var now1 = performance.now();
+        ias = ias + 1
+
+        // Convert to seconds
+        now *= 0.001;
+
+        //Error Handling for Animation
+        if (gltf.animations!= undefined )
+        {
+          Animation(gltf,then1,now1)
+        }
+        
+        // Subtract the previous time from the current time
+        var deltaTime = now - then;
+        // Remember the current time for the next frame.
+        then = now;
+
+        //webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+        // Animate the rotation
+        modelXRotationRadians += 0.2 * deltaTime;
+        modelYRotationRadians += 0.6 * deltaTime;
+
+
+        // Tell WebGL how to convert from clip space to pixels
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+        // Clear the canvas
+        gl.clearColor(0.3, 0.5, 0.3, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        // turn on depth testin
+        gl.enable(gl.DEPTH_TEST);
+        // GL.enable(GL.DEPTH_TEST);
+           gl.depthFunc(gl.LEQUAL)
+        //  gl.depthMask(false);
+        // gl.enable(gl.ALPHA)
+        gl.enable(gl.BLEND);
+        
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+
+        // Compute the matrix
+        var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+        var zNear = 0.01;
+        var zFar = 2000;
+        var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
+
+        var cameraPosition = [0,0,10];
+        var up = [0.0, 1.0, 0.0];
+        var target = [0, 0, 0];
+
+        // Compute the camera's matrix using look at.
+        var cameraMatrix = m4.lookAt(cameraPosition, target, up);
+
+        // Make a view matrix from the camera matrix.
+        var viewMatrix = m4.inverse(cameraMatrix);
+
+        var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
+        var matrix = m4.identity()
+        matrix = m4.xRotate(matrix, modelXRotationRadians);
+        matrix = m4.yRotate(matrix, modelYRotationRadians);
+
+   
+        // Draw the geometry.
+        var primitiveType = gl.TRIANGLES;
+
+        var tri = 0
+      
+
+        for (let RENDER of RENDER_DATA) {
+          // console.log(RENDER_DATA[0],RENDER.doubleSided)
+
+          if(!RENDER.doubleSided){
+            // console.log("kug",RENDER.doubleSided)
+            gl.enable(gl.CULL_FACE);
+            gl.cullFace(gl.BACK);
+
+          }
+          for (MESH of RENDER.MESH_DATA) {
+
+            gl.useProgram( MESH.MATERIAL.SHADER);
+
+            // console.log(MESH.MATERIAL.SHADER)
+            gl.bindVertexArray(MESH.vao);
+            var ModelLoc = gl.getUniformLocation(MESH.MATERIAL.SHADER, "model")
+            var viewLoc = gl.getUniformLocation(MESH.MATERIAL.SHADER, "view")
+            var ProjectionLoc = gl.getUniformLocation(MESH.MATERIAL.SHADER, "projection")
+            var matrixLocation = gl.getUniformLocation(MESH.MATERIAL.SHADER, "matrix")
+            var matrixLocation1 = gl.getUniformLocation(MESH.MATERIAL.SHADER, "matrix1")
+
+            // const BaseTextureLoc = gl.getUniformLocation(MESH.MATERIAL.SHADER, "Base_color_texture")
+
+            const cameraloc = gl.getUniformLocation(MESH.MATERIAL.SHADER, "CAMERA")
+            gl.uniformMatrix4fv(viewLoc, false, viewMatrix);
+            gl.uniformMatrix4fv(ProjectionLoc, false, projectionMatrix);
+            gl.uniformMatrix4fv(ModelLoc, false, m4.multiply(matrix,  render_map.get(RENDER.ROOT_NODE)));
+            gl.uniformMatrix4fv(matrixLocation1, false, m4.identity());
+            gl.uniformMatrix4fv(matrixLocation, false, m4.identity());
+            gl.uniform3fv(cameraloc,cameraPosition)
+            // console.log( MESH.MATERIAL)
+
+            if (MESH.MATERIAL.Data) {
+              
+              const textures = MESH.MATERIAL.Texture_IDs.BASE_COLOR_TEXTURE_ID;
+              
+              // console.log(MESH.MATERIAL.Texture_IDs.NORMAL_TEXTURE_COORDINATE,MESH.MATERIAL.Texture_IDs.METALLIC_ROUGHNESS_TEXTURE_COORDINATE)
+
+              gl.activeTexture(gl.TEXTURE0);
+              gl.bindTexture(gl.TEXTURE_2D, textures);
+              gl.uniform1i(MESH.MATERIAL.BaseTextureLoc, 0);
+              gl.uniform1i(MESH.MATERIAL.BaseTextureCoord,MESH.MATERIAL.Texture_IDs.BASE_COLOR_TEXTURE_COORDINATE );
+
+
+              gl.activeTexture(gl.TEXTURE1);
+              gl.bindTexture(gl.TEXTURE_2D, MESH.MATERIAL.Texture_IDs.NORMAL_TEXTURE_ID);
+              gl.uniform1i(MESH.MATERIAL.SHADER.NormalTextLoc, 1);
+              gl.uniform1i(MESH.MATERIAL.SHADER.NormalTextCoord,MESH.MATERIAL.Texture_IDs.NORMAL_TEXTURE_COORDINATE );
+
+
+              gl.activeTexture(gl.TEXTURE2);
+              gl.bindTexture(gl.TEXTURE_2D, MESH.MATERIAL.Texture_IDs.METALLIC_ROUGHNESS_TEXTURE_ID);
+              gl.uniform1i(MESH.MATERIAL.SHADER.mettalicroughTextureLoc, 2);
+              gl.uniform1i(MESH.MATERIAL.SHADER.mettalicroughTextureCoord,MESH.MATERIAL.Texture_IDs.METALLIC_ROUGHNESS_TEXTURE_COORDINATE );
+
+
+
+              gl.activeTexture(gl.TEXTURE3);
+              gl.bindTexture(gl.TEXTURE_2D, MESH.MATERIAL.Texture_IDs.OCCLUSION_TEXTURE_ID);
+              gl.uniform1i(MESH.MATERIAL.SHADER.occlusionTexturesLoc, 3);
+              gl.uniform1i(MESH.MATERIAL.SHADER.occlusionTexturesCoord,MESH.MATERIAL.Texture_IDs.OCCLUSION_TEXTURE_COORDINATE );
+
+              gl.activeTexture(gl.TEXTURE4);
+              gl.bindTexture(gl.TEXTURE_2D, MESH.MATERIAL.Texture_IDs.EMISSIVE_TEXTURE_ID);
+              gl.uniform1i(MESH.MATERIAL.SHADER.emissiveTexturesLoc, 4);
+              gl.uniform1i(MESH.MATERIAL.SHADER.emissiveTexturesCoord, MESH.MATERIAL.Texture_IDs.EMISSIVE_TEXTURE_COORD);
+            }
+            
+            if( MESH.indexedArray){
+              gl.drawElements(MESH.MODE, MESH.NUMBER_OF_ELEMENT, MESH.DATA_TYPE, 0);
+              // console.log(MESH.MODE, MESH.NUMBER_OF_ELEMENT,MESH.DATA_TYPE)
+            }
+            else{
+              gl.drawArrays(MESH.MODE,0,MESH.NUMBER_OF_ELEMENT)
+
+            }
+            
+            // tri += MESH.NUMBER_OF_ELEMENT
+            // // gl.drawElements(gl.LINES, inde[0].length, gl.UNSIGNED_SHORT, 0);
+            gl.bindVertexArray(null);
+          }
+        }
+        // console.log(tri)
+
+        // Call drawScene again next frame
+        requestAnimationFrame(drawScene);
+      }
+
+    }
+
+    main();
+
+  </script>
+
+  </script>
+
+</body>
+
+</html>
